@@ -1,0 +1,58 @@
+{
+  "version": 2,
+  "groups": {
+    "models": {
+      "name": "Models",
+      "order": 10
+    },
+    "share": {
+      "name": "Share",
+      "order": 20
+    }
+  },
+  "bundles": {},
+  "assets": {
+    "assets/models/crate.glb": {
+      "path": "/manus-storage/game/sha256/e8586b2ed32c7256e0e3f291f966959cbde826aada221426a67cc27c233d5982.glb",
+      "sha256": "sha256:e8586b2ed32c7256e0e3f291f966959cbde826aada221426a67cc27c233d5982",
+      "size": 819340,
+      "assetType": "model",
+      "groupId": "models"
+    },
+    "assets/models/paint-bomb.glb": {
+      "path": "/manus-storage/game/sha256/c195041d8f49f1b903882fc84ac6f1b97bbbf29df18474019567582710ac4311.glb",
+      "sha256": "sha256:c195041d8f49f1b903882fc84ac6f1b97bbbf29df18474019567582710ac4311",
+      "size": 718776,
+      "assetType": "model",
+      "groupId": "models"
+    },
+    "assets/models/painter-rig.glb": {
+      "path": "/manus-storage/game/sha256/e72ad6154d93699cbd487031b986b1f257ac30fe6a11b1d05a718cd45c759b72.glb",
+      "sha256": "sha256:e72ad6154d93699cbd487031b986b1f257ac30fe6a11b1d05a718cd45c759b72",
+      "size": 1321728,
+      "assetType": "model",
+      "groupId": "models"
+    },
+    "assets/models/painter.glb": {
+      "path": "/manus-storage/game/sha256/3dacd2b88cf7ac0d50670a8a2730d2b486324773a21226df0f14cc7c2d89c7ce.glb",
+      "sha256": "sha256:3dacd2b88cf7ac0d50670a8a2730d2b486324773a21226df0f14cc7c2d89c7ce",
+      "size": 527980,
+      "assetType": "model",
+      "groupId": "models"
+    },
+    "assets/share/favicon.png": {
+      "path": "/manus-storage/game/sha256/169cbd064bc85af6adf86f41712a6bacf060930bb38bbe7bc753b5b331b51640.png",
+      "sha256": "sha256:169cbd064bc85af6adf86f41712a6bacf060930bb38bbe7bc753b5b331b51640",
+      "size": 315289,
+      "assetType": "image",
+      "groupId": "share"
+    },
+    "assets/share/og.png": {
+      "path": "/manus-storage/game/sha256/054b1039f46579b6babd690293a33d3b68107a1c8e206968577ba03612e68fbd.png",
+      "sha256": "sha256:054b1039f46579b6babd690293a33d3b68107a1c8e206968577ba03612e68fbd",
+      "size": 1350792,
+      "assetType": "image",
+      "groupId": "share"
+    }
+  }
+}

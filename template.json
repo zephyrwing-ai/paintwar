@@ -1,0 +1,11 @@
+{
+  "id": "game-3d-multiplayer",
+  "kind": "game",
+  "engine": "threejs",
+  "status": "ready",
+  "name": "3D Multiplayer Game Template (three.js)",
+  "description": "A three.js browser 3D online multiplayer foundation for 2-4 players: each client simulates and draws its own ball and resolves its contacts, and a standalone Node WebSocket server relays poses and contacts and referees rounds, points and the winner, with rooms, spectators and seat recovery. Other balls are drawn in present time with latency extrapolation and smoothing; bilingual HTML/CSS game UI. Includes Ring Out, a ball-pushing arena game, as the reference; deploy the bundled server separately.",
+  "capabilities": [
+    "static"
+  ]
+}

@@ -550,7 +550,10 @@ export class Ui {
       <h2 data-k="lobby-title"></h2>
       <p class="my-color" data-k="my-color"></p>
       <ul class="slots" data-k="slots"></ul>
-      <button class="btn primary big ready-btn" data-action="ready"><span data-k="ready"></span></button>
+      <div class="lobby-actions">
+        <button class="btn primary big ready-btn" data-action="ready"><span data-k="ready"></span></button>
+        <button class="btn lobby-leave" data-action="leave">离开房间</button>
+      </div>
       <p class="lobby-hint" data-k="lobby-hint"></p>
     </div>
 

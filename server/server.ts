@@ -22,7 +22,7 @@ import {
   type Dir, type Mover, type Seat,
 } from '../shared/rules.ts'
 import {
-  CLOSE, MARKER, MAX_MESSAGE_BYTES, RECONNECT_GRACE_MS, cleanName, cleanRoom, parseClientMessage,
+  CLOSE, MARKER, MAX_MESSAGE_BYTES, MAX_SOCKET_BYTES, RECONNECT_GRACE_MS, cleanName, cleanRoom, parseClientMessage,
   type DashIntent, type ErrorCode, type EventInput, type GameEvent, type Phase, type PlayerSnap, type RoomMsg, type RoundResult,
   type SeatInfo, type SnapMsg, type TurnIntent,
 } from '../shared/protocol.ts'
@@ -590,7 +590,7 @@ function originAllowed(origin: string | undefined, hosts: string[]): boolean {
   }
 }
 
-const websocketServer = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES })
+const websocketServer = new WebSocketServer({ noServer: true, maxPayload: MAX_SOCKET_BYTES })
 
 httpServer.on('upgrade', (request, socket, head) => {
   let url: URL
@@ -634,11 +634,20 @@ websocketServer.on('connection', (ws: WebSocket, _request: unknown, url: URL) =>
     if (at - client.window >= 1000) { client.window = at; client.count = 0 }
     if (++client.count > MAX_MESSAGES_PER_SECOND) { ws.close(1008, 'message rate exceeded'); return }
     let message
-    try { message = parseClientMessage(JSON.parse(String(data))) } catch { message = null }
+    const text = String(data)
+    try { message = parseClientMessage(JSON.parse(text)) } catch { message = null }
     if (!message) return
+    // Game intents keep their original size limit; only opaque chat signaling may be larger.
+    if (message.type !== 'rtc' && text.length > MAX_MESSAGE_BYTES) return
     const r = client.room
     const seat = client.role !== 'spectator' && r.seats[client.role].socket === ws ? client.role : null
     switch (message.type) {
+      case 'rtc':
+        // Relay only: the server never parses, logs or stores SDP/ICE, and cannot read chat content.
+        if (seat && message.to !== seat && r.connected(message.to)) {
+          sendText(r.seats[message.to].socket, JSON.stringify({ type: 'rtc', marker: MARKER, room: r.code, from: seat, kind: message.kind, data: message.data }))
+        }
+        break
       case 'ping':
         sendText(ws, JSON.stringify({ type: 'pong', marker: MARKER, room: r.code, t: message.t, s: at }))
         break

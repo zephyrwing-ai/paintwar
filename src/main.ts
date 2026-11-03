@@ -9,6 +9,8 @@ import { ServerClock, clientNow } from './net/clock'
 import { bootstrapUrl, Connection } from './net/connection'
 import { BUILD, decode, parseEnvelope } from './net/protocol'
 import { invitedRoom, inviteUrl, loadName, loadResume, newRoomCode, randomName, socketUrl, storeName, storeResume, writeRoom } from './net/session'
+import { SecureChat } from './net/secureChat'
+import { ChatPanel } from './ui/chatPanel'
 import { TouchControls } from './ui/touch'
 import { Ui, type NetStatus } from './ui/ui'
 
@@ -45,8 +47,16 @@ async function boot(): Promise<void> {
     if (welcomed) connection.send(JSON.stringify(message))
   }
 
+  // Room chat is a separate layer: it reads room membership, never touches game state.
+  let chatPanel: ChatPanel | undefined
+  const chat = new SecureChat({
+    signal: (to, kind, data) => send({ type: 'rtc', to, kind, data }),
+    changed: () => chatPanel?.render(),
+  })
+
   const goHome = (invite = '') => {
     connection.stop()
+    chat.reset()
     active = false
     welcomed = false
     room = null
@@ -57,6 +67,7 @@ async function boot(): Promise<void> {
 
   const fail = (title: string, text: string, offerCreate = true) => {
     connection.stop()
+    chat.reset()
     active = false
     welcomed = false
     writeRoom('')
@@ -144,6 +155,10 @@ async function boot(): Promise<void> {
         lastSeq = message.seq
         room = message
         g.onRoom(message)
+        chat.sync(message, role, code)
+        break
+      case 'rtc':
+        if (welcomed) void chat.onSignal(message)
         break
       case 'snap':
         if (!welcomed) return
@@ -207,6 +222,7 @@ async function boot(): Promise<void> {
     },
   })
   ui.show('boot')
+  chatPanel = new ChatPanel(document.querySelector<HTMLElement>('[data-screen="play"]')!, chat)
   applySettings(save.data)
 
   // Boot: the loader is on screen; three.js, the game code and the three models load behind it.

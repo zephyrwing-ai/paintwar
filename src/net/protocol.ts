@@ -2,7 +2,7 @@
  * Client side of the wire protocol: decodes and sanity-checks server messages. Server rules live
  * in shared/; this module only guards shapes, the build marker and message order.
  */
-import { MARKER, MAX_SERVER_MESSAGE_BYTES, type ErrorMsg, type PongMsg, type RoomMsg, type ServerMessage, type SnapMsg, type WelcomeMsg } from '../../shared/protocol.ts'
+import { MARKER, MAX_SERVER_MESSAGE_BYTES, isSeat, type ErrorMsg, type PongMsg, type RoomMsg, type RtcMsg, type ServerMessage, type SnapMsg, type WelcomeMsg } from '../../shared/protocol.ts'
 
 export const BUILD = MARKER
 
@@ -40,6 +40,8 @@ export function decode(text: string, room: string, lastSeq: number): ServerMessa
       return m as unknown as SnapMsg
     case 'pong':
       return num(m.t) && num(m.s) ? (m as unknown as PongMsg) : null
+    case 'rtc':
+      return isSeat(m.from) && typeof m.kind === 'string' && typeof m.data === 'string' ? (m as unknown as RtcMsg) : null
     default:
       return null
   }

@@ -11,6 +11,9 @@ export const NAME_MAX = 8
 export const RECONNECT_GRACE_MS = 30_000
 export const MAX_MESSAGE_BYTES = 4096
 export const MAX_SERVER_MESSAGE_BYTES = 16_384
+/** WebRTC signaling (SDP/ICE) is opaque to the server and may exceed a game intent's size. */
+export const MAX_SIGNAL_BYTES = 12_288
+export const MAX_SOCKET_BYTES = 16_384
 
 export type Phase = 'lobby' | 'countdown' | 'live' | 'results'
 export type Role = Seat | 'spectator'
@@ -46,7 +49,10 @@ export type DashIntent = { type: 'dash'; round: number; seq: number; tick: numbe
 export type NameIntent = { type: 'name'; name: string }
 export type LeaveIntent = { type: 'leave' }
 export type PingIntent = { type: 'ping'; t: number }
-export type ClientMessage = ReadyIntent | TurnIntent | DashIntent | NameIntent | LeaveIntent | PingIntent
+export type SignalKind = 'offer' | 'answer' | 'ice'
+/** Peer-to-peer chat signaling: relayed to one seat in the same room, never stored or parsed. */
+export type RtcIntent = { type: 'rtc'; to: Seat; kind: SignalKind; data: string }
+export type ClientMessage = ReadyIntent | TurnIntent | DashIntent | NameIntent | LeaveIntent | PingIntent | RtcIntent
 
 const safeInt = (v: unknown, min = 0): v is number => Number.isSafeInteger(v) && (v as number) >= min
 
@@ -70,6 +76,9 @@ export function parseClientMessage(value: unknown): ClientMessage | null {
       return { type: 'leave' }
     case 'ping':
       return safeInt(m.t) ? { type: 'ping', t: m.t } : null
+    case 'rtc':
+      return isSeat(m.to) && (m.kind === 'offer' || m.kind === 'answer' || m.kind === 'ice') && typeof m.data === 'string' && m.data.length > 0 && m.data.length <= MAX_SIGNAL_BYTES
+        ? { type: 'rtc', to: m.to, kind: m.kind, data: m.data } : null
     default:
       return null
   }
@@ -130,9 +139,10 @@ export type SnapMsg = {
   ev: GameEvent[]
 }
 export type PongMsg = { type: 'pong'; marker: string; room: string; t: number; s: number }
+export type RtcMsg = { type: 'rtc'; marker: string; room: string; from: Seat; kind: SignalKind; data: string }
 export type ErrorCode = 'room_not_found' | 'room_exists' | 'room_full' | 'server_full' | 'invalid_message'
 export type ErrorMsg = { type: 'error'; marker: string; room: string; code: ErrorCode }
-export type ServerMessage = WelcomeMsg | RoomMsg | SnapMsg | PongMsg | ErrorMsg
+export type ServerMessage = WelcomeMsg | RoomMsg | SnapMsg | PongMsg | ErrorMsg | RtcMsg
 
 export const isSeat = (value: unknown): value is Seat => typeof value === 'string' && (SEATS as readonly string[]).includes(value)
 

@@ -8,6 +8,8 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WebSocket } from 'ws'
+import { CHAT_CAPABILITY, MAX_MESSAGE_BYTES, MAX_SIGNAL_BYTES, MAX_SOCKET_BYTES } from '../shared/protocol.ts'
+import { decode } from '../src/net/protocol.ts'
 
 type Msg = Record<string, any>
 
@@ -52,6 +54,9 @@ class TestClient {
   last(type: string): Msg | undefined {
     for (let i = this.messages.length - 1; i >= 0; i -= 1) if (this.messages[i].type === type) return this.messages[i]
     return undefined
+  }
+  count(type: string): number {
+    return this.messages.filter(message => message.type === type).length
   }
   async waitFor(predicate: (m: Msg) => boolean, timeout = 5000, label = 'message'): Promise<Msg> {
     const start = Date.now()
@@ -105,6 +110,7 @@ test('create, join, errors, spectators', async () => {
     const wa = await a.waitFor(m => m.type === 'welcome')
     assert.equal(wa.role, 'p1')
     assert.equal(wa.name, '小红b')
+    assert.deepEqual(wa.capabilities, [CHAT_CAPABILITY])
     assert.ok(wa.resume_token.length > 10)
 
     const dup = join(url, 'ABCD', { create: true })
@@ -255,6 +261,110 @@ test('origin allowlist', async () => {
     const good = join(url, 'ABRG', { create: true, origin: 'https://friend.example' })
     assert.equal((await good.waitFor(m => m.type === 'welcome')).role, 'p1')
     good.close()
+  } finally {
+    proc.kill()
+  }
+})
+
+test('client decoder normalizes capabilities and validates rtc', () => {
+  const welcome = (capabilities?: unknown) => JSON.stringify({
+    type: 'welcome', marker: 'paint-war-v1', room: 'DECX', role: 'p1', resume_token: 'token', name: 'A', now: 1,
+    ...(capabilities === undefined ? {} : { capabilities }),
+  })
+  assert.deepEqual((decode(welcome(), 'DECX', -1) as Msg).capabilities, [])
+  assert.deepEqual((decode(welcome([CHAT_CAPABILITY]), 'DECX', -1) as Msg).capabilities, [CHAT_CAPABILITY])
+  assert.equal(decode(welcome([CHAT_CAPABILITY, 1]), 'DECX', -1), null)
+
+  const rtc = (kind: unknown, data: string) => JSON.stringify({
+    type: 'rtc', marker: 'paint-war-v1', room: 'DECX', from: 'p1', kind, data,
+  })
+  assert.equal((decode(rtc('offer', 'sdp'), 'DECX', -1) as Msg).from, 'p1')
+  assert.equal(decode(rtc('closed', 'sdp'), 'DECX', -1), null)
+  assert.equal(decode(rtc('offer', '你'.repeat(Math.floor(MAX_SIGNAL_BYTES / 3) + 1)), 'DECX', -1), null)
+})
+
+test('welcome capabilities and rtc relay authorization', async () => {
+  const { proc, url } = await startServer()
+  try {
+    const a = join(url, 'RTCX', { create: true, name: 'A' })
+    const wa = await a.waitFor(m => m.type === 'welcome')
+    assert.equal(wa.marker, 'paint-war-v1')
+    assert.deepEqual(wa.capabilities, [CHAT_CAPABILITY])
+
+    const b = join(url, 'RTCX', { name: 'B' })
+    const c = join(url, 'RTCX', { name: 'C' })
+    const d = join(url, 'RTCX', { name: 'D' })
+    assert.equal((await b.waitFor(m => m.type === 'welcome')).role, 'p2')
+    assert.deepEqual((await Promise.all([
+      c.waitFor(m => m.type === 'welcome').then(m => m.role),
+      d.waitFor(m => m.type === 'welcome').then(m => m.role),
+    ])).sort(), ['p3', 'p4'])
+    const spectator = join(url, 'RTCX', { name: 'E' })
+    assert.equal((await spectator.waitFor(m => m.type === 'welcome')).role, 'spectator')
+
+    a.send({ type: 'rtc', to: 'p2', from: 'p4', kind: 'offer', data: 'offer-from-p1' })
+    const relayed = await b.waitFor(m => m.type === 'rtc')
+    assert.deepEqual(relayed, {
+      type: 'rtc', marker: 'paint-war-v1', room: 'RTCX', from: 'p1', kind: 'offer', data: 'offer-from-p1',
+    })
+
+    const p1Signals = a.count('rtc')
+    const p2Signals = b.count('rtc')
+    a.send({ type: 'rtc', to: 'p1', kind: 'offer', data: 'self' })
+    a.send({ type: 'rtc', to: 'p2', kind: 'closed', data: 'invalid-kind' })
+    spectator.send({ type: 'rtc', to: 'p1', kind: 'offer', data: 'spectator' })
+    await new Promise(resolve => setTimeout(resolve, 200))
+    assert.equal(a.count('rtc'), p1Signals)
+    assert.equal(b.count('rtc'), p2Signals)
+    assert.equal(a.ws.readyState, WebSocket.OPEN)
+
+    for (const client of [a, b, c, d, spectator]) client.close()
+  } finally {
+    proc.kill()
+  }
+})
+
+test('message byte limits and rtc payload limits', async () => {
+  const { proc, url } = await startServer()
+  try {
+    const a = join(url, 'BNDX', { create: true, name: 'A' })
+    const b = join(url, 'BNDX', { name: 'B' })
+    const c = join(url, 'BNDX', { name: 'C' })
+    const d = join(url, 'BNDX', { name: 'D' })
+    await a.waitFor(m => m.type === 'welcome')
+    await b.waitFor(m => m.type === 'welcome')
+    assert.deepEqual((await Promise.all([
+      c.waitFor(m => m.type === 'welcome').then(m => m.role),
+      d.waitFor(m => m.type === 'welcome').then(m => m.role),
+    ])).sort(), ['p3', 'p4'])
+    const spectator = join(url, 'BNDX', { name: 'E' })
+    assert.equal((await spectator.waitFor(m => m.type === 'welcome')).role, 'spectator')
+
+    // A multibyte game message exceeds 4 KiB after UTF-8 encoding even though its code-point count is lower.
+    const pongs = a.count('pong')
+    a.ws.send(JSON.stringify({ type: 'ping', t: 1, padding: '你'.repeat(Math.floor(MAX_MESSAGE_BYTES / 3) + 1) }))
+    const p2Signals = b.count('rtc')
+    a.send({ type: 'rtc', to: 'p2', kind: 'offer', data: '你'.repeat(Math.floor(MAX_SIGNAL_BYTES / 3) + 1) })
+    await new Promise(resolve => setTimeout(resolve, 250))
+    assert.equal(a.count('pong'), pongs)
+    assert.equal(b.count('rtc'), p2Signals)
+    assert.equal(a.ws.readyState, WebSocket.OPEN)
+
+    // Spectators cannot use the larger signal budget to bypass the 4 KiB frame limit.
+    const p1Signals = a.count('rtc')
+    spectator.ws.send(JSON.stringify({
+      type: 'rtc', to: 'p1', kind: 'offer', data: '你'.repeat(Math.floor(MAX_MESSAGE_BYTES / 3) + 1),
+    }))
+    await new Promise(resolve => setTimeout(resolve, 200))
+    assert.equal(a.count('rtc'), p1Signals)
+    spectator.send({ type: 'ping', t: 2 })
+    assert.equal((await spectator.waitFor(m => m.type === 'pong' && m.t === 2)).t, 2)
+
+    // The WebSocket transport rejects a frame beyond its absolute payload ceiling.
+    a.ws.send(JSON.stringify({ type: 'ping', t: 3, padding: 'x'.repeat(MAX_SOCKET_BYTES) }))
+    assert.equal(await a.closed(), 1009)
+
+    for (const client of [b, c, d, spectator]) client.close()
   } finally {
     proc.kill()
   }

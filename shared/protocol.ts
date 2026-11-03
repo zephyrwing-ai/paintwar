@@ -5,6 +5,8 @@
 import { CELLS, PROTOCOL, SEATS, isDir, type Dir, type Seat } from './rules.ts'
 
 export const MARKER = PROTOCOL
+/** Server capability advertised independently from the protocol marker. */
+export const CHAT_CAPABILITY = 'chat-v1'
 export const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 export const ROOM_LENGTH = 4
 export const NAME_MAX = 8
@@ -50,6 +52,17 @@ export type NameIntent = { type: 'name'; name: string }
 export type LeaveIntent = { type: 'leave' }
 export type PingIntent = { type: 'ping'; t: number }
 export type SignalKind = 'offer' | 'answer' | 'ice'
+
+export function isSignalKind(value: unknown): value is SignalKind {
+  return value === 'offer' || value === 'answer' || value === 'ice'
+}
+
+const utf8Encoder = new TextEncoder()
+
+export function utf8ByteLength(value: string): number {
+  return utf8Encoder.encode(value).byteLength
+}
+
 /** Peer-to-peer chat signaling: relayed to one seat in the same room, never stored or parsed. */
 export type RtcIntent = { type: 'rtc'; to: Seat; kind: SignalKind; data: string }
 export type ClientMessage = ReadyIntent | TurnIntent | DashIntent | NameIntent | LeaveIntent | PingIntent | RtcIntent
@@ -77,7 +90,7 @@ export function parseClientMessage(value: unknown): ClientMessage | null {
     case 'ping':
       return safeInt(m.t) ? { type: 'ping', t: m.t } : null
     case 'rtc':
-      return isSeat(m.to) && (m.kind === 'offer' || m.kind === 'answer' || m.kind === 'ice') && typeof m.data === 'string' && m.data.length > 0 && m.data.length <= MAX_SIGNAL_BYTES
+      return isSeat(m.to) && isSignalKind(m.kind) && typeof m.data === 'string' && m.data.length > 0 && utf8ByteLength(m.data) <= MAX_SIGNAL_BYTES
         ? { type: 'rtc', to: m.to, kind: m.kind, data: m.data } : null
     default:
       return null
@@ -100,6 +113,7 @@ export type RoundResult = {
 
 export type WelcomeMsg = {
   type: 'welcome'; marker: string; room: string; role: Role; resume_token: string; name: string; now: number
+  capabilities?: string[]
 }
 export type RoomMsg = {
   type: 'room'; marker: string; room: string; seq: number; round: number; phase: Phase

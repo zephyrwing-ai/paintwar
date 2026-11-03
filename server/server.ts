@@ -22,7 +22,8 @@ import {
   type Dir, type Mover, type Seat,
 } from '../shared/rules.ts'
 import {
-  CLOSE, MARKER, MAX_MESSAGE_BYTES, MAX_SOCKET_BYTES, RECONNECT_GRACE_MS, cleanName, cleanRoom, parseClientMessage,
+  CHAT_CAPABILITY, CLOSE, MARKER, MAX_MESSAGE_BYTES, MAX_SIGNAL_BYTES, MAX_SOCKET_BYTES, RECONNECT_GRACE_MS,
+  cleanName, cleanRoom, parseClientMessage, utf8ByteLength,
   type DashIntent, type ErrorCode, type EventInput, type GameEvent, type Phase, type PlayerSnap, type RoomMsg, type RoundResult,
   type SeatInfo, type SnapMsg, type TurnIntent,
 } from '../shared/protocol.ts'
@@ -197,7 +198,10 @@ class Room {
 
   private welcome(ws: WebSocket, role: Seat | 'spectator', now: number): void {
     const s = role === 'spectator' ? null : this.seats[role]
-    sendText(ws, JSON.stringify({ type: 'welcome', marker: MARKER, room: this.code, role, resume_token: s?.token ?? '', name: s?.name ?? '', now }))
+    sendText(ws, JSON.stringify({
+      type: 'welcome', marker: MARKER, room: this.code, role, resume_token: s?.token ?? '', name: s?.name ?? '', now,
+      capabilities: [CHAT_CAPABILITY],
+    }))
     // Full state at once: the room, then the latest board (live, or the last round's final paint).
     sendText(ws, JSON.stringify(this.roomMessage()))
     if (this.phase === 'live') sendText(ws, JSON.stringify(this.snapMessage(false)))
@@ -633,12 +637,16 @@ websocketServer.on('connection', (ws: WebSocket, _request: unknown, url: URL) =>
     const at = Date.now()
     if (at - client.window >= 1000) { client.window = at; client.count = 0 }
     if (++client.count > MAX_MESSAGES_PER_SECOND) { ws.close(1008, 'message rate exceeded'); return }
-    let message
     const text = String(data)
+    const frameBytes = utf8ByteLength(text)
+    if (frameBytes > MAX_SOCKET_BYTES) return
+    if (client.role === 'spectator' && frameBytes > MAX_MESSAGE_BYTES) return
+    let message
     try { message = parseClientMessage(JSON.parse(text)) } catch { message = null }
     if (!message) return
-    // Game intents keep their original size limit; only opaque chat signaling may be larger.
-    if (message.type !== 'rtc' && text.length > MAX_MESSAGE_BYTES) return
+    if (message.type === 'rtc') {
+      if (utf8ByteLength(message.data) > MAX_SIGNAL_BYTES) return
+    } else if (frameBytes > MAX_MESSAGE_BYTES) return
     const r = client.room
     const seat = client.role !== 'spectator' && r.seats[client.role].socket === ws ? client.role : null
     switch (message.type) {

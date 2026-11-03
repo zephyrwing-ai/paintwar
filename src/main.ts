@@ -92,6 +92,7 @@ async function boot(): Promise<void> {
   const connection = new Connection({
     state: state => {
       if (state === 'unavailable') {
+        chat.reset()
         ui.notice('联机服务暂时不可用', '没能连上游戏服务器。可能是服务器正在启动或网络不稳定，请稍后重试。', [
           { label: '重试', primary: true, run: () => enter(code, create) },
           { label: '回到首页', run: () => goHome() },
@@ -104,6 +105,7 @@ async function boot(): Promise<void> {
       welcomed = false
       if (closeCode === CLOSE.replaced) {
         connection.stop()
+        chat.reset()
         ui.notice('已在其他标签页打开', '你在另一个标签页重新进入了这个房间，这里的连接已经断开。', [{ label: '回到首页', primary: true, run: () => goHome() }])
         active = false
         return
@@ -124,6 +126,7 @@ async function boot(): Promise<void> {
     const envelope = parseEnvelope(text)
     if (envelope && typeof envelope.marker === 'string' && envelope.marker !== BUILD) {
       connection.stop()
+      chat.reset()
       ui.notice('游戏有新版本', '服务器已经更新，刷新页面就能继续玩。', [{ label: '刷新页面', primary: true, run: () => location.reload() }])
       active = false
       return
@@ -147,6 +150,7 @@ async function boot(): Promise<void> {
         storeName(name)
         storeResume(code, connection.endpoint, message.resume_token)
         g.setRole(role)
+        chat.setCapabilities(message.capabilities ?? [])
         status = 'online'
         break
       }
@@ -294,7 +298,10 @@ async function boot(): Promise<void> {
   }, 200)
 
   // Debug/test hook (read-only use): smoke tests inspect state through it.
-  ;(window as unknown as { __game: unknown }).__game = { game: g, ui, input, save, connection, clock, state: () => ({ room, role, status, code, welcomed }) }
+  ;(window as unknown as { __game: unknown }).__game = {
+    game: g, ui, input, save, connection, clock, chat,
+    state: () => ({ room, role, status, code, welcomed }),
+  }
 }
 
 function hasResume(room: string): boolean {

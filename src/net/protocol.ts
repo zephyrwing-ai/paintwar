@@ -2,14 +2,17 @@
  * Client side of the wire protocol: decodes and sanity-checks server messages. Server rules live
  * in shared/; this module only guards shapes, the build marker and message order.
  */
-import { MARKER, MAX_SERVER_MESSAGE_BYTES, isSeat, type ErrorMsg, type PongMsg, type RoomMsg, type RtcMsg, type ServerMessage, type SnapMsg, type WelcomeMsg } from '../../shared/protocol.ts'
+import {
+  MARKER, MAX_SERVER_MESSAGE_BYTES, MAX_SIGNAL_BYTES, isSeat, isSignalKind, utf8ByteLength,
+  type ErrorMsg, type PongMsg, type RoomMsg, type RtcMsg, type ServerMessage, type SnapMsg, type WelcomeMsg,
+} from '../../shared/protocol.ts'
 
 export const BUILD = MARKER
 
 export type Envelope = { type?: unknown; marker?: unknown; room?: unknown; seq?: unknown }
 
 export function parseEnvelope(text: string): Envelope | null {
-  if (text.length > MAX_SERVER_MESSAGE_BYTES) return null
+  if (utf8ByteLength(text) > MAX_SERVER_MESSAGE_BYTES) return null
   try {
     const value = JSON.parse(text) as unknown
     return value && typeof value === 'object' && !Array.isArray(value) ? (value as Envelope) : null
@@ -19,6 +22,7 @@ export function parseEnvelope(text: string): Envelope | null {
 }
 
 const num = (v: unknown) => typeof v === 'number' && Number.isFinite(v)
+const stringArray = (v: unknown): v is string[] => Array.isArray(v) && v.every(item => typeof item === 'string')
 
 /**
  * Returns the message when it belongs to this room and build, and (for ordered kinds) is newer
@@ -30,8 +34,11 @@ export function decode(text: string, room: string, lastSeq: number): ServerMessa
   if (m.type === 'error') return typeof m.code === 'string' ? (m as unknown as ErrorMsg) : null
   if (m.room !== room) return null
   switch (m.type) {
-    case 'welcome':
-      return typeof m.role === 'string' && typeof m.resume_token === 'string' && num(m.now) ? (m as unknown as WelcomeMsg) : null
+    case 'welcome': {
+      if (typeof m.role !== 'string' || typeof m.resume_token !== 'string' || !num(m.now)) return null
+      if (m.capabilities !== undefined && !stringArray(m.capabilities)) return null
+      return { ...(m as unknown as WelcomeMsg), capabilities: (m.capabilities as string[] | undefined) ?? [] }
+    }
     case 'room':
       if (!num(m.seq) || (m.seq as number) <= lastSeq || typeof m.phase !== 'string' || !m.seats || typeof m.seats !== 'object') return null
       return m as unknown as RoomMsg
@@ -41,7 +48,8 @@ export function decode(text: string, room: string, lastSeq: number): ServerMessa
     case 'pong':
       return num(m.t) && num(m.s) ? (m as unknown as PongMsg) : null
     case 'rtc':
-      return isSeat(m.from) && typeof m.kind === 'string' && typeof m.data === 'string' ? (m as unknown as RtcMsg) : null
+      return isSeat(m.from) && isSignalKind(m.kind) && typeof m.data === 'string' && m.data.length > 0 && utf8ByteLength(m.data) <= MAX_SIGNAL_BYTES
+        ? (m as unknown as RtcMsg) : null
     default:
       return null
   }

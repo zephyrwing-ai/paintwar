@@ -2,11 +2,3 @@ node_modules/
 dist/
 shots/
 /.manus-webdev/preview-identity.json
-# Assets restored from assets.lock.json
-/assets/models/crate.glb
-/assets/models/paint-bomb.glb
-/assets/models/painter-rig.glb
-/assets/models/painter.glb
-# Assets restored from assets.lock.json
-/assets/share/favicon.png
-/assets/share/og.png

@@ -1,79 +1,91 @@
-# Ring Out relay and referee service
+# 涂地大作战服务器
 
-This directory owns Ring Out's protocol and executable service. It is deployed separately from the
-static client; installing this template does not provision a computer or start the service. Hosting
-and acceptance are owned by the Game Skill's shared multiplayer guide (`game-multiplayer.md`).
+`server.ts` 是独立的 Node 22.18+ WebSocket 服务。一个进程承载所有房间，并负责座位、阶段、固定步长模拟、涂色、碰撞、炸弹、比分和胜负。浏览器只发送准备、转向和冲刺意图。
 
-- Node 22+, pinned pnpm dependencies: `pnpm install --frozen-lockfile --prod`.
-- Run `HOST=127.0.0.1 PORT=8787 node authoritative_server.mjs` after verifying the chosen port.
-  `PORT=0` picks a free port; the first stdout line is JSON with the bound `port`.
-- `ALLOWED_ORIGINS` is a comma-separated list of exact browser origins permitted in addition to the
-  same-origin deployment. Origin checks are not account authentication.
-- Optional `STATIC_ROOT` serves a complete built client (default `../dist`). Server source and private
-  configuration must never be placed in the static root.
-- `GET /healthz` reports process availability. `/ws?room=ABCD` connects a client. Room codes are 4–8
-  ASCII letters/digits and public invitations; this reference does not implement private rooms.
+## 启动
 
-## Protocol: ring-out-v2
+从仓库根目录执行：
 
-This service does no physics. Each client simulates its own ball and publishes it. The service
-relays poses and contacts, and it alone decides rounds, ring-outs, points and the match winner.
+```bash
+pnpm --dir server install --frozen-lockfile --prod
+HOST=0.0.0.0 PORT=8787 pnpm --dir server start
+```
 
-`welcome` contains `marker`, `room`, `role` (`p1` to `p4`, or `spectator`), a private
-`resume_token`, `rules` (`arena_radius`, `ball_radius`, `accel`, `damping`, `max_speed`,
-`restitution`, `win_score`) and `spawn` (`p1` to `p4`, each `x`, `z`). Every client moves its ball
-with these numbers. Reconnect adds the token as `resume` to the same endpoint and room. Do not log
-request queries or share this token. A resumed seat closes the previous socket with code `4001`.
+服务端依赖仓库中的 `shared/`。直接复制独立目录时，需要同时保留：
 
-`pose` from a client has `seq`, `round`, `x`, `z`, `vx`, `vz` and `lat` (the sender's one-way
-latency in ms). The service accepts it only from the seat's current socket, during `live`, for the
-current `round`, from a seat that is still in play, with a strictly increasing safe-integer `seq`,
-finite values, `|x, z|` at most arena radius + 4, `|vx, vz|` at most 2 × max speed and `lat` from 0
-to 1000. It relays a valid pose at once, with `seat`, to every other player and spectator, and it
-keeps the latest pose per seat for late joiners. Invalid poses are dropped without a reply.
+```text
+server/
+shared/
+```
 
-`hit` from a client has `to` (a seat), `round`, `jx` and `jz`: the impulse that the owner of `to`
-must apply after a contact. The service relays it, with the sender as `seat`, only to that owner,
-when both seats are in play, the round matches and `|jx, jz|` is at most 2 × max speed. The two
-balls' last poses must also be within reach: at most two ball radii plus 1 m apart, plus the
-distance each ball can move at its reported speed since its pose. The service relays at most one
-hit per pair every 150 ms. It does not simulate the contact.
+端口 `0` 会绑定空闲端口，第一条 stdout JSON 包含实际端口。
 
-`ping` with a numeric `t` gets `pong` with the same `t`, so clients measure latency without clock
-synchronization.
+## 配置
 
-`room` is sent when something changes. It contains a monotonically increasing `seq`, `round`,
-`phase` (`waiting`, `countdown`, `live`, `point`, `ended`), `phase_ends_in_ms`, `seats.p1` to `p4`
-(`connected`, `playing`, `out`, `score`), `winner` and `event` (`seq`, `kind`, `seat`). Event kinds
-are `round`, `ringout`, `point` and `match`. `error` carries the same marker and room with the
-stable code `invalid_message`.
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `HOST` | `127.0.0.1` | 监听地址 |
+| `PORT` | `8787` | 监听端口 |
+| `STATIC_ROOT` | `../dist` | 可选静态客户端目录 |
+| `ALLOWED_ORIGINS` | 空 | 精确允许的浏览器 Origin |
+| `ALLOWED_ORIGIN_SUFFIXES` | 空 | 允许的域名后缀 |
+| `RECONNECT_GRACE_MS` | `30000` | 断线座位保留时间 |
+| `ROOM_EMPTY_MS` | `300000` | 空房间保留时间 |
 
-## Referee rules
+同源请求默认通过。`GET /healthz` 和 `GET /api/health` 返回进程状态。WebSocket 路径为 `/ws`，房间参数为 `room`，创建参数为 `create=1`，重连参数为 `resume`。
 
-A round needs two connected players and starts after a 3 s countdown. Players who join during a
-round play from the next round. The first valid pose of a ball with its centre beyond the arena
-radius (10 m) puts that ball out (`ringout`). A player who disconnects, or resumes the seat from a
-new page, during a round is out of that round. A playing seat that sends no pose for 3 s is also out
-of the round, without a `ringout` event; a hidden browser tab stops sending. When at most one ball
-is left, that ball's seat scores 0.25 s later (`point`), unless that ball also goes out first. If
-no ball is left, nobody scores. The next round starts 1.5 s after a point. A seat that reaches 3 points wins (`match`), and a
-new match starts 5 s later. When fewer than two players stay connected, the round is void and the
-room waits.
+## 协议
 
-Trust model: the referee trusts each client's report of its own ball within the bounds above. A
-modified client can move its ball anywhere within 14 m of the centre from one pose to the next,
-refuse to fall, or push a ball within reach harder than the rules allow. This is acceptable for a
-casual game, not for ranked play.
+协议 marker 为 `paint-war-v1`。`welcome` 同时声明服务端能力：
 
-Disconnected seats are reserved for 60 seconds. Empty rooms expire after ten minutes. Process
-restart loses rooms and scores. Capacity is bounded to 128 rooms, 256 connections and eight
-spectators per room (close code `1013` when full). Messages have a 4096-byte limit and a
-90-message/s ceiling. Slow clients and missed heartbeats are disconnected. This is a bounded MVP,
-not internet-scale matchmaking, persistent identity, ranked play or DDoS protection.
+```json
+{
+  "type": "welcome",
+  "marker": "paint-war-v1",
+  "role": "p1",
+  "capabilities": ["chat-v1"]
+}
+```
 
-## Checks
+游戏意图：
 
-`pnpm test` starts an isolated process on port 0 and verifies four seats, spectators, room
-isolation, pose and hit validation and relay, the referee, reconnection and the Origin allowlist.
-`pnpm test:e2e -- wss://VERIFIED_HOST/ws` targets an explicitly chosen service, creates a temporary
-room, and checks that a pose past the edge from p2 gives p1 the point on both clients.
+- `ready`：设置座位准备状态。
+- `turn`：在当前回合请求转向。
+- `dash`：在当前回合请求冲刺。
+- `name`：大厅阶段修改昵称。
+- `leave`：立即释放座位。
+- `ping`：测量往返延迟。
+- `rtc`：向同一房间的另一个在线座位转发 `offer`、`answer` 或 `ice`。
+
+服务端发送 `welcome`、`room`、`snap`、`pong`、`rtc` 和 `error`。房间状态变化发送 `room`，对局进行中约 20 Hz 发送 `snap`。
+
+## 权威规则
+
+- 每局 90 秒，最后 15 秒进入狂热时间。
+- 两名以上已连接玩家全部准备后开始 3 秒倒计时。
+- 玩家进入格子后为格子涂色；冲刺可撞晕其他玩家；颜料炸弹覆盖 3×3 区域。
+- 时间结束按涂色格数、撞晕次数和炸弹数排序。
+- 少于两名玩家时提前结束，胜者获得一局比分。
+- 断线座位在宽限期内冻结；宽限期结束后释放。
+- 客户端意图包含回合与递增序号，服务端只应用当前回合、序号递增且首次到达的意图。
+
+## 聊天信令
+
+服务端检查 `rtc` 消息的目标、类型、字符串大小和目标座位在线状态，然后原样转发。SDP/ICE 对服务端保持不可解析和临时状态，DataChannel 与音频内容在两端浏览器之间加密。
+
+普通游戏消息上限为 4 KB；聊天信令内容上限为 12 KB；WebSocket 帧上限为 16 KB。每个连接每秒最多发送 60 条消息，慢连接在发送缓冲超过 128 KB 时断开。
+
+## 容量
+
+- 200 个房间
+- 600 个并发连接
+- 每个房间 4 个座位和 8 个观战者
+- 15 秒 WebSocket 心跳
+
+## 测试
+
+```bash
+pnpm --dir server test
+```
+
+测试在随机端口启动真实服务进程，覆盖创造和加入房间、观战、准备、快照频率、意图去重、权威规则、重连、座位替换、Origin 限制以及聊天信令边界。

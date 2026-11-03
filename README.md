@@ -1,173 +1,106 @@
-# game-3d-multiplayer starter (three.js + relay and referee WebSocket server)
+# 涂地大作战
 
-A complete, small online 3D game: **Ring Out**. Two to four players roll balls on a round arena and
-try to push each other off the edge. The last ball on the arena takes the point. First to 3 points
-wins, and a rematch starts 5 seconds later. Visitors after the fourth watch. It exists to be
-*changed*: the engine and network layers are fixed scaffolding, and the game layer and the referee
-rules are the parts you rewrite.
+一款 2–4 人实时联机的浏览器涂地竞技游戏。玩家用方向键或 WASD 转向，在 90 秒内尽可能多地覆盖地图；冲刺可以撞晕对手，颜料炸弹能够一次炸开 3×3 区域。房间通过邀请链接加入，支持观战、断线重连和累计比分。
 
-Each browser owns its own ball. It applies input, moves the ball, resolves its side of every
-contact and draws the scene at once, then publishes the result as a `pose`. The server
-`server/authoritative_server.mjs` does no physics. It relays poses and contacts, and it alone
-decides the outcome from those reports: rounds, ring-outs, points, the match winner and the rules.
+## 技术结构
+
+- **服务端权威模拟**：`server/server.ts` 以 20 Hz 推进固定步长模拟，统一决定移动、碰撞、涂色、炸弹、计时和胜负。
+- **共享规则**：`shared/rules.ts` 同时被浏览器和服务端引用，客户端使用相同规则做即时预测，服务端结果作为最终状态。
+- **实时通信**：浏览器与服务端通过 WebSocket 交换意图、房间状态和快照，协议版本为 `paint-war-v1`。
+- **渲染与界面**：Three.js、TypeScript、Vite；动态界面使用 HTML/CSS。
+- **房间聊天**：WebRTC DataChannel 传输文字，WebRTC 音频轨道传输语音；游戏服务器只转发 SDP/ICE 信令。聊天能力通过 `chat-v1` capability 协商，旧服务端仍可正常运行游戏并隐藏聊天入口。
+- **聊天身份核对**：双方界面显示由两端 DTLS 指纹生成的安全码。语音仅在本地用户确认安全码后发送和播放；安全码变化会暂停文字和语音，要求重新核对。
+- **仓库资产**：游戏模型与分享图随仓库提供，生产构建通过 Vite 输出带内容哈希的本地资源 URL。
+
+## 本地运行
+
+需要 Node.js 22.18+ 和 pnpm 10。
 
 ```bash
 pnpm install
-pnpm --dir server install   # once: the server has its own lockfile
-pnpm dev:server             # relay and referee on ws://127.0.0.1:8787/ws (PORT overrides 8787)
-pnpm dev                    # client; set GAME_MULTIPLAYER_SIGNALING_URL first (see below)
-pnpm build                  # typecheck + production build + JS/font budgets
-pnpm test                   # client unit tests (protocol, own ball, remote balls, save, i18n, tuning)
-pnpm test:server            # server protocol tests on an isolated port
-pnpm smoke                  # after build: headless players in one room; p1 pushes p2 out, then p3 joins
+pnpm --dir server install
 ```
 
-## Run players locally
+终端一启动游戏服务器：
 
-1. Start the server with the Vite page origin allowed (default port 3000):
-   `ALLOWED_ORIGINS=http://127.0.0.1:3000,http://localhost:3000 pnpm dev:server`. It prints one JSON
-   line with the bound port. Without that variable the server accepts only same-origin pages, so
-   it rejects the Vite page and the client keeps reconnecting.
-2. Put `GAME_MULTIPLAYER_SIGNALING_URL=ws://127.0.0.1:8787/ws` in `.env.local` (not committed), then
-   start or restart `pnpm dev`. The Vite dev server serves that endpoint as
-   `/multiplayer/bootstrap.json`. Builds never include it.
-3. Open the game, press **Play Online**, then **Copy invite link**. Open the link in a second window
-   or browser, side by side: a hidden tab stops sending its ball, and the server puts a seat that is
-   silent for 3 s out of the round. The first four visitors are P1 to P4, later visitors watch. A round starts when two
-   players are connected; a player who joins during a round plays from the next round.
+```bash
+ALLOWED_ORIGINS=http://127.0.0.1:3000,http://localhost:3000 pnpm dev:server
+```
 
-Without a configured endpoint the title screen still works and **Play Online** reports that online
-play is not configured. A Manus cloud Preview cannot reach a loopback server: test cloud sessions
-against a deployed `wss://` server whose `ALLOWED_ORIGINS` includes the Preview origin.
+终端二创建 `.env.local`：
 
-## Deploy
+```dotenv
+GAME_MULTIPLAYER_SIGNALING_URL=ws://127.0.0.1:8787/ws
+```
 
-Deploy only `server/` (source, `package.json`, `pnpm-lock.yaml`) as a separate Node 22+ service behind
-a public `wss://<host>/ws` endpoint. `server/README.md` owns its environment and limits; the Game
-Skill's shared multiplayer guide (`game-multiplayer.md`) owns hosting and acceptance. Then:
+然后启动客户端：
 
-1. Write the endpoint into `public/multiplayer/bootstrap.json` as `signalingUrl`. Published clients
-   accept only `wss://` URLs with the path `/ws`.
-2. If the client is published on a different origin than the server, add that exact origin to the
-   server's `ALLOWED_ORIGINS`.
-3. Build and publish the client, then test with two browsers on the published URL.
+```bash
+pnpm dev
+```
 
-`build` in `bootstrap.json` and `BUILD` in `src/net/protocol.ts` must equal the server's `MARKER`
-(`ring-out-v2`). Change all three together when the protocol changes, and deploy the matching
-server and client together.
+打开 `http://127.0.0.1:3000`。创建房间后复制邀请链接，在第二个浏览器窗口中打开并加入。两名玩家都准备后，服务器开始 3 秒倒计时。
 
-## Layout
+## 检查命令
 
-| Path | Role | Change it? |
-| --- | --- | --- |
-| `server/authoritative_server.mjs` | Rooms, seats, pose and hit relay, referee, rules | Yes: outcome rules live here |
-| `src/net/protocol.ts` | `ring-out-v2` message types and strict decoding | When the protocol changes |
-| `src/net/connection.ts` | Bootstrap fetch, socket lifecycle, retry | Rarely |
-| `src/net/session.ts` | Room code, `?room=` invite link, per-tab resume token | Rarely |
-| `src/game/localBall.ts` | `OwnBall`: input, movement and contacts of the own ball | Yes: movement lives here |
-| `src/game/balls.ts` | `RemoteTrack` (other balls in present time), ball meshes, rolling, fall | Yes |
-| `src/game/game.ts` | Own-ball steps, contacts, server events → effects, sound and HUD | Yes |
-| `src/game/arena.ts`, `fx.ts` | Arena, particles | Yes |
-| `src/game/camera.ts` | Camera behind each seat, screen → arena input mapping, shake | Yes |
-| `src/game/config.ts`, `tuning.ts` | Presentation and smoothing values, cosmetic Tweak controls | Yes |
-| `src/main.ts` | Boot, connection wiring, 30 Hz pose sending, hits, 1 Hz ping | When adding messages |
-| `src/engine/*` | Loop, renderer, input, audio, save, i18n, assets | Rarely |
-| `src/ui/`, `src/styles/main.css` | HTML/CSS title, HUD, in-match menu, settings, touch stick | Yes |
-| `src/i18n/*.json` | All player-facing text (both files, same keys) | Yes |
-| `public/multiplayer/bootstrap.json` | Public server endpoint for published builds | On deploy |
+```bash
+pnpm typecheck
+pnpm test
+pnpm test:server
+pnpm build
+pnpm smoke
+```
 
-## Protocol `ring-out-v2`
+`pnpm smoke` 需要先执行 `pnpm build`，使用真实 Chromium、真实 WebSocket 服务和模拟麦克风验证双人入场、安全码一致、语音核对门槛、DataChannel 文本、证书轮换后语音关闭、准备、开局、移动涂色、菜单、移动端布局和离线提示。服务端测试还覆盖房间、预测、重连、权威规则、Origin 限制和聊天信令边界。
 
-| Message | Direction | Fields |
-| --- | --- | --- |
-| `welcome` | server → client | `marker`, `room`, `role` (`p1` to `p4`, or `spectator`), private `resume_token`, `rules`, `spawn` |
-| `room` | server → client, when something changes | `seq`, `round`, `phase`, `phase_ends_in_ms`, `seats.p1`…`p4` (`connected`, `playing`, `out`, `score`), `winner`, `event` (`seq`, `kind`, `seat`) |
-| `pose` | client → server at 30 Hz during `live`, and at once after a contact or the edge | `seq` (increasing), `round`, `x`, `z`, `vx`, `vz`, `lat` (own one-way latency, ms) |
-| `pose` | server → other clients, at once | the same fields plus `seat` |
-| `hit` | client → server → the hit ball's owner | `to` (sent) or `seat` (received), `round`, `jx`, `jz` (impulse for that ball) |
-| `ping` / `pong` | client ↔ server, 1 Hz | `t`; the client measures its latency from the round trip |
-| `error` | server → client | `marker`, `room`, `code: "invalid_message"` |
+## 部署
 
-Phases: `waiting` (fewer than two players) → `countdown` (3 s) → `live` → `point` (1.5 s) after the
-round, or `ended` (5 s) after a win, then a fresh match. Event kinds: `round`, `ringout` (a ball left
-the arena), `point` (the last ball standing scores; empty `seat` means nobody), `match`. Coordinates
-are metres on the arena plane: centre (0, 0), radius 10, ball radius 0.8. Spawns: P1 at z = +4, P2 at
-z = −4, P3 at x = +4, P4 at x = −4. Close code `4001` means another tab resumed the same seat. Close
-code `1013` means the room already has eight spectators. The client stops retrying after either code.
+静态客户端：
 
-## How movement stays smooth
+```bash
+pnpm build
+```
 
-- **Own ball, no wait.** `OwnBall` runs at 60 Hz in the fixed-step loop. Input moves it at once; no
-  server round trip sits between a key press and the ball.
-- **Other balls in present time.** `RemoteTrack` projects the last relayed pose forward by its age
-  (sender latency + own latency + time since receipt, at most `net.maxLead`). A new pose moves the
-  estimate at once, and the drawn ball fades the jump out over `net.smoothTime`. The jump is measured
-  between the old and new estimate at the same instant, so normal movement is never treated as error.
-  A jump longer than `net.snapDistance` (one ball diameter) is applied at once instead of faded, so a
-  large error does not slide the ball across the arena.
-  Balls are drawn where they are now, not 100 ms in the past. Only a round's spawn moves them without a fade.
-- **One contact, applied once.** The client that detects a contact first applies its own half of
-  the impulse and sends the other half as a `hit` to the owner of the other ball. That owner applies
-  it. If both owners detect the same contact, each applies only its own half and ignores the other's
-  `hit`. The window per pair is at least `HIT_WINDOW` (0.25 s) and grows to the measured
-  client-to-client round trip.
-- **Optimistic fall, server verdict.** A ball that crosses the edge holds that pose and starts
-  falling at once on its owner's screen and, from its pose, on every other screen. The server's `ringout`, `point` and
-  `match` events are the only source of score and winner.
+输出目录为 `dist/`。`public/multiplayer/bootstrap.json` 默认使用同源 `/ws`，因此客户端和 WebSocket 服务可以部署在同一个域名下。分享元数据默认使用 `https://zephyrwing-ai.github.io/paintwar`；部署到其他地址时通过 `PUBLICATION_ORIGIN` 覆盖：
 
-## Trust model
+```bash
+PUBLICATION_ORIGIN=https://example.com/paintwar pnpm build
+```
 
-The referee trusts each client's report of its own ball within bounds: position at most arena
-radius + 4, speed and hit impulse at most 2 × max speed, increasing `seq`, the current `round`, and
-at most 90 messages per second. It relays a `hit` only between balls whose last poses are within
-reach, at most once per pair every 150 ms. A modified client can still move its ball anywhere within
-14 m of the centre from one pose to the next, refuse to fall, or push a nearby ball harder than the
-rules allow. If it stops sending poses, the server puts it out after 3 s. This is acceptable for a
-casual game. For competitive play, move movement and contacts
-to the server and accept the input round trip.
+Node 服务端：
 
-## Rules for changes
+```bash
+pnpm --dir server install --frozen-lockfile --prod
+HOST=0.0.0.0 PORT=8787 pnpm --dir server start
+```
 
-- **Outcome rules go in the server.** Round, point and win rules live in `checkRoundEnd()` and
-  `pose()` in `server/authoritative_server.mjs`. Never score or end a round on the client.
-- **Movement rules go in `welcome.rules`.** Acceleration, damping, speed cap, ball and arena radius
-  and restitution are defined once in the server and sent in `welcome.rules`. Every client runs the
-  same `integrate()` and `touch()` in `src/game/localBall.ts` with those numbers. Add a new rule to
-  both the server constants and `validRules()` in `src/net/protocol.ts`.
-- **New actions** (for example a dash): apply them to `OwnBall` and set `urgent` in `game.ts`, so
-  the next `pose` goes out at once. If an action affects another ball, send it like `hit`, and add a strict
-  validator and a relay to the server.
-- **Every visible string is an i18n key** in both `en.json` and `zh-CN.json` (a test enforces
-  matching keys and placeholders). English and Chinese use the bundled Manus CC0 fonts.
-- **UI is HTML/CSS**, not canvas. Menus stay keyboard/gamepad navigable (`data-nav`). Opening the
-  menu never pauses the match, because the other players keep playing.
-- Keep `pnpm build` within the JS/font budgets, and keep `pnpm test`, `pnpm test:server` and
-  `pnpm smoke` green.
+部署时同时保留 `server/` 与 `shared/`。服务端支持以下环境变量：
 
-## Controls
+| 变量 | 作用 |
+| --- | --- |
+| `HOST` / `PORT` | 监听地址与端口 |
+| `STATIC_ROOT` | 可选静态站点目录，默认 `../dist` |
+| `ALLOWED_ORIGINS` | 逗号分隔的精确跨域 Origin |
+| `ALLOWED_ORIGIN_SUFFIXES` | 逗号分隔的可信域名后缀 |
+| `RECONNECT_GRACE_MS` | 座位保留时长 |
+| `ROOM_EMPTY_MS` | 空房间保留时长 |
 
-Keyboard: WASD or arrow keys roll, Esc opens the menu. Gamepad: left stick rolls, Start opens the
-menu. Touch: drag anywhere on the screen. "Up" always rolls toward the arena centre, because each
-player's camera sits behind their own spawn.
+`Dockerfile` 提供同样的 Node 22 服务端镜像。
 
-## Credits
+## 目录
 
-Fonts: ManusCC0 (regular, medium, bold) and ManusCC0 Sans CJK SC — CC0 1.0. See
-`public/fonts/ManusCC0-LICENSE.txt`. Libraries: three.js (MIT), ws (MIT).
+| 路径 | 职责 |
+| --- | --- |
+| `shared/rules.ts` | 确定性规则、地图和移动模拟 |
+| `shared/protocol.ts` | 客户端与服务端协议、能力声明和严格校验 |
+| `server/server.ts` | WebSocket 服务、权威房间与静态文件服务 |
+| `src/game/` | Three.js 场景、预测、绘制和游戏表现 |
+| `src/net/secureChat.ts` | WebRTC 聊天、安全码、媒体权限和重连状态 |
+| `src/ui/chatPanel.ts` | 聊天与语音界面 |
+| `src/ui/ui.ts` | 首页、房间、HUD、菜单和设置 |
+| `docs/secure-chat.md` | 聊天威胁模型与验证范围 |
+| `scripts/smoke.mjs` | 生产构建端到端验收 |
 
-## Preview Tweak
+## 第三方资源
 
-`src/game/tuning.ts` is this game's parameter manager. The server owns every movement and outcome
-rule and sends it in `welcome.rules`, so the catalog exposes only `LIVE` `COSMETIC` camera controls.
-Do not add gameplay controls to the client: a value on one client would make its ball follow
-different rules from the others. Register through
-`scripts/manus-tuning/adapter.js` only under `import.meta.env.DEV`, and keep the Vite plugin and
-`scripts/__manus__/` helpers intact; production builds exclude the browser adapter.
-
-Apply changes preview state only. Do not mutate the source defaults or persist Apply to
-localStorage. Save with Manus checks the snapshot against the current catalog and edits
-`DEFAULT_CONFIG`, then uses the normal Three.js Web build/checkpoint workflow.
-
-The preview plugin reads the ignored `.manus-webdev/preview-identity.json` v1 projection written by
-the Runtime when initializing, attaching or restoring this project. Missing identity disables the
-bridge.
+Three.js 使用 MIT 许可证，`ws` 使用 MIT 许可证。ManusCC0 字体及其许可证位于 `public/fonts/`。

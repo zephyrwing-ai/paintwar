@@ -1,7 +1,7 @@
 import { manusGameTuning } from './scripts/manus-tuning/vite.mjs'
 import { loadEnv, type Plugin } from 'vite'
 import { defineConfig } from 'vitest/config'
-import bootstrap from './public/multiplayer/bootstrap.json'
+import bootstrap from './public/multiplayer/bootstrap.json' with { type: 'json' }
 
 const ENDPOINT = /^wss:\/\/[^/@?#:]+(:[0-9]+)?\/ws$|^ws:\/\/(127\.0\.0\.1|localhost|\[::1\])(:[0-9]+)?\/ws$/
 

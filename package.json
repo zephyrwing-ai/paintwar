@@ -2,7 +2,12 @@
   "name": "paintwar",
   "private": true,
   "version": "0.1.0",
+  "description": "2-4 人实时联机涂地竞技游戏",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zephyrwing-ai/paintwar.git"
+  },
   "scripts": {
     "dev": "node scripts/manus-game-assets/restore.mjs && vite",
     "dev:server": "pnpm --dir server start",

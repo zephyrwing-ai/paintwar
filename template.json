@@ -3,8 +3,8 @@
   "kind": "game",
   "engine": "threejs",
   "status": "ready",
-  "name": "3D Multiplayer Game Template (three.js)",
-  "description": "A three.js browser 3D online multiplayer foundation for 2-4 players: each client simulates and draws its own ball and resolves its contacts, and a standalone Node WebSocket server relays poses and contacts and referees rounds, points and the winner, with rooms, spectators and seat recovery. Other balls are drawn in present time with latency extrapolation and smoothing; bilingual HTML/CSS game UI. Includes Ring Out, a ball-pushing arena game, as the reference; deploy the bundled server separately.",
+  "name": "涂地大作战",
+  "description": "A real-time 2-4 player paint arena game built with Three.js and TypeScript. The Node server owns deterministic movement, painting, collisions, bombs, timing and scoring while clients predict locally from the same shared rules. Includes room invites, spectators, reconnect recovery, capability-negotiated WebRTC text and voice chat, and an end-to-end Chromium smoke test.",
   "capabilities": [
     "static"
   ]

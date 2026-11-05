@@ -9,9 +9,9 @@
     "url": "git+https://github.com/zephyrwing-ai/paintwar.git"
   },
   "scripts": {
-    "dev": "node scripts/manus-game-assets/restore.mjs && vite",
+    "dev": "vite",
     "dev:server": "pnpm --dir server start",
-    "build": "node scripts/manus-game-assets/restore.mjs && node scripts/manus-game-sharing/build.mjs",
+    "build": "node scripts/manus-game-sharing/build.mjs",
     "preview": "vite preview --port 4173 --strictPort",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

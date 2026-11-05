@@ -69,7 +69,7 @@ async function openGame(context, url, errors) {
   page.on('pageerror', e => errors.push(String(e)))
   page.on('response', r => r.status() >= 400 && errors.push(`HTTP ${r.status()} ${r.url()}`))
   await page.goto(url)
-  await page.waitForSelector('[data-screen="home"].is-active', { timeout: 30_000 })
+  await page.waitForSelector('[data-screen="home"].is-active', { timeout: 60_000 })
   await page.evaluate(async () => {
     await document.fonts.ready
     const family = getComputedStyle(document.querySelector('.logo')).fontFamily

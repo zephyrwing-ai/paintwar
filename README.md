@@ -85,7 +85,15 @@ HOST=0.0.0.0 PORT=8787 pnpm --dir server start
 | `RECONNECT_GRACE_MS` | 座位保留时长 |
 | `ROOM_EMPTY_MS` | 空房间保留时长 |
 
-`Dockerfile` 提供同样的 Node 22 服务端镜像。
+`Dockerfile` 提供单容器生产镜像：同一 Node 22 服务同时托管静态客户端、`/ws` 和 `/healthz`。本地验证生产镜像：
+
+```bash
+PUBLICATION_ORIGIN=https://zephyrwing-ai.github.io/paintwar \
+  docker compose up --build --detach
+curl --fail http://127.0.0.1:3000/healthz
+```
+
+完整的候选容器验证、手工切换、GHCR 镜像、HTTPS 反向代理和回滚步骤见 `DEPLOY.md`。发布过程会重启 Node 服务，房间和比分存放在内存中，因此正式切换会清空当前比赛状态。
 
 ## 目录
 
@@ -100,6 +108,9 @@ HOST=0.0.0.0 PORT=8787 pnpm --dir server start
 | `src/ui/ui.ts` | 首页、房间、HUD、菜单和设置 |
 | `docs/secure-chat.md` | 聊天威胁模型与验证范围 |
 | `scripts/smoke.mjs` | 生产构建端到端验收 |
+| `Dockerfile` / `compose.yaml` | 单容器生产构建与本机验证 |
+| `DEPLOY.md` | 手动云端发布、切换与回滚 |
+| `.github/workflows/` | CI 验证与 GHCR 镜像发布 |
 
 ## 第三方资源
 

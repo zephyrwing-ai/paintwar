@@ -1,0 +1,31 @@
+name: paintwar
+
+services:
+  game:
+    image: "${PAINTWAR_IMAGE:-paintwar:local}"
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PUBLICATION_ORIGIN: "${PUBLICATION_ORIGIN:-https://zephyrwing-ai.github.io/paintwar}"
+    ports:
+      - "${PAINTWAR_BIND:-127.0.0.1}:${PAINTWAR_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      STATIC_ROOT: /app/dist
+      ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-}"
+      ALLOWED_ORIGIN_SUFFIXES: "${ALLOWED_ORIGIN_SUFFIXES:-}"
+      RECONNECT_GRACE_MS: "${RECONNECT_GRACE_MS:-30000}"
+      ROOM_EMPTY_MS: "${ROOM_EMPTY_MS:-300000}"
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 10s
+    restart: unless-stopped

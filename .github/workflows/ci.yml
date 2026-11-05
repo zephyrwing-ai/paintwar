@@ -20,7 +20,7 @@ jobs:
       CI: "true"
       PUBLICATION_ORIGIN: https://zephyrwing-ai.github.io/paintwar
       SHOTS_DIR: shots
-      SMOKE_SKIP_ROTATION: "1"
+      SMOKE_SKIP_CHAT: "1"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

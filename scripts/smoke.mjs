@@ -123,57 +123,59 @@ try {
   await waitFor(p2, s => s.role === 'p2', 'second player did not get p2')
   await waitFor(p1, s => s.room?.seats.p2?.connected === true, 'p2 did not appear in the room')
 
-  await p1.click('.chat-toggle')
-  await p2.click('.chat-toggle')
-  await p1.waitForSelector('.chat-peer .chat-code', { timeout: 15_000 })
-  await p2.waitForSelector('.chat-peer .chat-code', { timeout: 15_000 })
-  const p1Code = await p1.locator('.chat-code').textContent()
-  const p2Code = await p2.locator('.chat-code').textContent()
-  if (!p1Code || p1Code !== p2Code) throw new Error(`safety codes differ: ${p1Code} / ${p2Code}`)
-  if (!(await p1.locator('.chat-mic').isDisabled())) throw new Error('voice was enabled before verification')
-  await p1.click('.chat-peer [data-chat="verify"]')
-  await p2.click('.chat-peer [data-chat="verify"]')
-  if (await p1.locator('.chat-mic').isDisabled()) throw new Error('voice stayed locked after verification')
-  await p1.click('.chat-mic')
-  await p2.click('.chat-mic')
-  for (const page of [p1, p2]) {
-    await page.waitForFunction(async () => {
-      const peers = await window.__game.chat.diagnostics()
-      return peers.some(peer => peer.outboundTrack && peer.inboundAudio && peer.bytesSent > 0 && peer.bytesReceived > 0)
-    }, null, { timeout: 10_000 })
-  }
-  await p1.fill('.chat-input', 'paintwar-smoke')
-  await p1.click('.chat-form button')
-  await p2.waitForFunction(() => document.querySelector('.chat-log')?.textContent?.includes('paintwar-smoke'), null, { timeout: 5000 })
-  await p1.screenshot({ path: `${out}/02b-secure-chat.png` })
-
-  if (process.env.SMOKE_SKIP_ROTATION !== '1') {
-    // A refreshed peer gets a new ephemeral certificate. Existing trust must drop and voice must stop.
-    await p2.reload()
-    await p2.waitForSelector('[data-screen="play"].is-active', { timeout: 30_000 })
-    await waitFor(p2, s => s.role === 'p2' && s.room?.phase === 'lobby', 'refreshed peer did not resume its seat', 20_000)
-    await p1.waitForSelector('.chat-peer.is-changed', { timeout: 60_000 })
-    await p1.waitForFunction(() => {
-      const mic = document.querySelector('.chat-mic')
-      const input = document.querySelector('.chat-input')
-      return mic?.textContent?.includes('核对') &&
-        mic.hasAttribute('disabled') &&
-        input?.hasAttribute('disabled')
-    }, null, { timeout: 20_000 })
-    await p1.waitForFunction(async () => {
-      const peer = (await window.__game.chat.diagnostics()).find(value => value.seat === 'p2')
-      return Boolean(peer?.changed && !peer.micOn && !peer.outboundTrack && !peer.inboundAudio)
-    }, null, { timeout: 20_000 })
-    const changedPeer = await p1.evaluate(async () =>
-      (await window.__game.chat.diagnostics()).find(peer => peer.seat === 'p2') ?? null)
-    if (!changedPeer?.changed || changedPeer.micOn || changedPeer.outboundTrack || changedPeer.inboundAudio) {
-      throw new Error(`voice transport survived safety-code change: ${JSON.stringify(changedPeer)}`)
+  if (process.env.SMOKE_SKIP_CHAT !== '1') {
+    await p1.click('.chat-toggle')
+    await p2.click('.chat-toggle')
+    await p1.waitForSelector('.chat-peer .chat-code', { timeout: 15_000 })
+    await p2.waitForSelector('.chat-peer .chat-code', { timeout: 15_000 })
+    const p1Code = await p1.locator('.chat-code').textContent()
+    const p2Code = await p2.locator('.chat-code').textContent()
+    if (!p1Code || p1Code !== p2Code) throw new Error(`safety codes differ: ${p1Code} / ${p2Code}`)
+    if (!(await p1.locator('.chat-mic').isDisabled())) throw new Error('voice was enabled before verification')
+    await p1.click('.chat-peer [data-chat="verify"]')
+    await p2.click('.chat-peer [data-chat="verify"]')
+    if (await p1.locator('.chat-mic').isDisabled()) throw new Error('voice stayed locked after verification')
+    await p1.click('.chat-mic')
+    await p2.click('.chat-mic')
+    for (const page of [p1, p2]) {
+      await page.waitForFunction(async () => {
+        const peers = await window.__game.chat.diagnostics()
+        return peers.some(peer => peer.outboundTrack && peer.inboundAudio && peer.bytesSent > 0 && peer.bytesReceived > 0)
+      }, null, { timeout: 10_000 })
     }
-    await p1.screenshot({ path: `${out}/02c-safety-code-changed.png` })
-  }
+    await p1.fill('.chat-input', 'paintwar-smoke')
+    await p1.click('.chat-form button')
+    await p2.waitForFunction(() => document.querySelector('.chat-log')?.textContent?.includes('paintwar-smoke'), null, { timeout: 5000 })
+    await p1.screenshot({ path: `${out}/02b-secure-chat.png` })
 
-  await p1.click('.chat-toggle')
-  await p2.click('.chat-toggle')
+    if (process.env.SMOKE_SKIP_ROTATION !== '1') {
+      // A refreshed peer gets a new ephemeral certificate. Existing trust must drop and voice must stop.
+      await p2.reload()
+      await p2.waitForSelector('[data-screen="play"].is-active', { timeout: 30_000 })
+      await waitFor(p2, s => s.role === 'p2' && s.room?.phase === 'lobby', 'refreshed peer did not resume its seat', 20_000)
+      await p1.waitForSelector('.chat-peer.is-changed', { timeout: 60_000 })
+      await p1.waitForFunction(() => {
+        const mic = document.querySelector('.chat-mic')
+        const input = document.querySelector('.chat-input')
+        return mic?.textContent?.includes('核对') &&
+          mic.hasAttribute('disabled') &&
+          input?.hasAttribute('disabled')
+      }, null, { timeout: 20_000 })
+      await p1.waitForFunction(async () => {
+        const peer = (await window.__game.chat.diagnostics()).find(value => value.seat === 'p2')
+        return Boolean(peer?.changed && !peer.micOn && !peer.outboundTrack && !peer.inboundAudio)
+      }, null, { timeout: 20_000 })
+      const changedPeer = await p1.evaluate(async () =>
+        (await window.__game.chat.diagnostics()).find(peer => peer.seat === 'p2') ?? null)
+      if (!changedPeer?.changed || changedPeer.micOn || changedPeer.outboundTrack || changedPeer.inboundAudio) {
+        throw new Error(`voice transport survived safety-code change: ${JSON.stringify(changedPeer)}`)
+      }
+      await p1.screenshot({ path: `${out}/02c-safety-code-changed.png` })
+    }
+
+    await p1.click('.chat-toggle')
+    await p2.click('.chat-toggle')
+  }
 
   await p1.click('[data-action="ready"]')
   await p2.click('[data-action="ready"]')

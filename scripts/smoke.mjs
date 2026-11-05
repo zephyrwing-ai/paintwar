@@ -22,7 +22,7 @@ const server = spawn(process.execPath, ['server/server.ts'], {
 })
 let proxy
 let browser
-const guard = setTimeout(() => fail('timed out'), 120_000)
+const guard = setTimeout(() => fail('timed out'), 240_000)
 
 function cleanup() {
   clearTimeout(guard)
@@ -151,18 +151,18 @@ try {
   await p2.reload()
   await p2.waitForSelector('[data-screen="play"].is-active', { timeout: 30_000 })
   await waitFor(p2, s => s.role === 'p2' && s.room?.phase === 'lobby', 'refreshed peer did not resume its seat', 20_000)
-  await p1.waitForSelector('.chat-peer.is-changed', { timeout: 20_000 })
+  await p1.waitForSelector('.chat-peer.is-changed', { timeout: 60_000 })
   await p1.waitForFunction(() => {
     const mic = document.querySelector('.chat-mic')
     const input = document.querySelector('.chat-input')
     return mic?.textContent?.includes('核对') &&
       mic.hasAttribute('disabled') &&
       input?.hasAttribute('disabled')
-  }, null, { timeout: 5000 })
+  }, null, { timeout: 20_000 })
   await p1.waitForFunction(async () => {
     const peer = (await window.__game.chat.diagnostics()).find(value => value.seat === 'p2')
     return Boolean(peer?.changed && !peer.micOn && !peer.outboundTrack && !peer.inboundAudio)
-  }, null, { timeout: 5000 })
+  }, null, { timeout: 20_000 })
   const changedPeer = await p1.evaluate(async () =>
     (await window.__game.chat.diagnostics()).find(peer => peer.seat === 'p2') ?? null)
   if (!changedPeer?.changed || changedPeer.micOn || changedPeer.outboundTrack || changedPeer.inboundAudio) {

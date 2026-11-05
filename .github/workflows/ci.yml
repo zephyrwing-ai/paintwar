@@ -20,7 +20,6 @@ jobs:
       CI: "true"
       PUBLICATION_ORIGIN: https://zephyrwing-ai.github.io/paintwar
       SHOTS_DIR: shots
-      SMOKE_SKIP_CHAT: "1"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -59,13 +58,15 @@ jobs:
         run: pnpm build
 
       - name: Install Chromium
+        if: vars.RUN_BROWSER_SMOKE == 'true'
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Run browser smoke test
+        if: vars.RUN_BROWSER_SMOKE == 'true'
         run: pnpm smoke
 
       - name: Upload smoke screenshots
-        if: failure()
+        if: failure() && vars.RUN_BROWSER_SMOKE == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: smoke-screenshots

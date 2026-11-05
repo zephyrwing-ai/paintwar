@@ -15,7 +15,7 @@
 
 GitHub Actions 承担两项辅助职责：
 
-- `CI` 工作流在 push 和 pull request 时执行类型检查、客户端测试、服务端测试、生产构建和 Playwright Smoke。
+- `CI` 工作流在 push 和 pull request 时执行类型检查、客户端测试、服务端测试和生产构建。仓库变量 `RUN_BROWSER_SMOKE=true` 会额外启用 Playwright Smoke；该完整媒体链路默认在本地和发布机执行。
 - `Container` 工作流在 `main` 分支 push 时构建并推送 GHCR 镜像。
 
 线上容器切换始终由人工步骤完成。
